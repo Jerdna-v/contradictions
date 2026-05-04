@@ -1,0 +1,49 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
+
+%labels
+    Author an49507
+
+%environment
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+    export HF_HOME=/opt/huggingface
+    export TRANSFORMERS_CACHE=/opt/huggingface/transformers
+    export HF_HUB_CACHE=/opt/huggingface/hub_cache
+    export PYTHONPATH=/opt/py_deps:${PYTHONPATH:-}
+
+%post
+    set -e
+    python3 -m pip install --upgrade pip
+
+    python3 -m pip install --no-cache-dir --upgrade \
+        --index-url https://download.pytorch.org/whl/cu118 \
+        torch==2.1.2
+
+    python3 -m pip install --no-cache-dir --upgrade \
+        "numpy<2" pyarrow pandas safetensors transformers tokenizers huggingface-hub \
+        filelock fsspec regex tqdm scikit-learn faiss-cpu pyyaml httpx
+
+    # vLLM needs a modern Python GPU stack and is only used for self-hosted local serving.
+    python3 -m pip install --no-cache-dir --upgrade \
+        vllm==0.6.6.post1
+
+    # vLLM 0.6.6 still references a tokenizer attribute that newer tokenizer
+    # wrappers no longer expose. Patch the installed package in-place so Phi-3
+    # can start without crashing during tokenizer initialization.
+    python3 - <<'PY'
+from pathlib import Path
+
+tokenizer_file = Path('/opt/conda/lib/python3.10/site-packages/vllm/transformers_utils/tokenizer.py')
+text = tokenizer_file.read_text()
+patched = text.replace('all_special_tokens_extended', 'all_special_tokens')
+if text != patched:
+    tokenizer_file.write_text(patched)
+PY
+
+%runscript
+    exec python3 "$@"
+
+%help
+    Self-hosted GPU image for the contradictions pipeline.
+    Includes PyTorch, Hugging Face tooling, and vLLM for local model serving.

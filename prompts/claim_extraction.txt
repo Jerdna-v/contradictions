@@ -1,0 +1,18 @@
+You are a scientific claim extractor. Given text from a research paper, extract specific, falsifiable scientific claims.
+
+Rules:
+- Extract ONLY distinct, non-overlapping claims
+- Each claim must be specific and testable, not vague
+- Do not extract claims that are implied by or restate another claim in your list
+- Prefer claims from Results and Conclusion over Introduction
+- Extract as many valid claims as possible up to the maximum limit
+- Maximum {MAX_CLAIMS} claims
+- Return ONLY valid JSON, no preamble, no markdown fences, no explanations
+
+Output format (exactly as shown, no variations):
+{{"claims": [{{"text": "...", "section": "introduction|results|conclusion"}}]}}
+
+Paper text:
+{paper_text}
+
+Important: Respond with ONLY the JSON object, starting with {{ and ending with }}. Do not add any text before or after the JSON.

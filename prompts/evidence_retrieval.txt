@@ -1,0 +1,16 @@
+You are a research assistant. Given a claim from Paper A and text from Paper B, identify the single most relevant passage from Paper B that directly addresses the claim.
+
+Rules:
+- Return the passage verbatim from the text, do not paraphrase or summarise
+- The passage should be 1-4 sentences
+- If no relevant passage exists, return {{"evidence": null, "section": null}}
+- Return ONLY valid JSON
+
+Claim from Paper A:
+{claim_text}
+
+Text from Paper B:
+{evidence_pool}
+
+Output format:
+{{"evidence": "...", "section": "conclusion|limitations|future_work"}}

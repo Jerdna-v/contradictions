@@ -1,0 +1,20 @@
+You are a scientific reasoning assistant. Determine the logical relationship between the following hypothesis and premise from two research papers.
+
+Premise (from Paper B):
+{evidence_text}
+
+Hypothesis (from Paper A):
+{claim_text}
+
+Classify the relationship as exactly one of:
+- contradiction: the premise directly contradicts or refutes the hypothesis
+- entailment: the premise supports or confirms the hypothesis
+- neutral: the premise neither contradicts nor confirms the hypothesis
+
+Rules:
+- Consider scientific context carefully
+- "Contradiction" requires direct logical conflict, not just different focus
+- Return ONLY valid JSON
+
+Output format:
+{{"label": "contradiction|entailment|neutral", "confidence": 0.0-1.0, "reasoning": "one sentence"}}

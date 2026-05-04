@@ -1,0 +1,3 @@
+# Optional dependencies for hosting model servers locally.
+# Not needed when using already-running remote/local vLLM endpoints.
+vllm

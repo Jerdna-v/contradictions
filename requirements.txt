@@ -1,0 +1,10 @@
+python-dotenv
+numpy
+httpx
+celery
+redis
+scipy
+pytest
+pytest-httpx
+pandas
+pyarrow

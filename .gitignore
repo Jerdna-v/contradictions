@@ -1,0 +1,85 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+
+# Virtualenvs
+.venv/
+venv/
+ENV/
+env/
+.Python
+
+# SQLite databases and journals
+pipeline_state.db
+pipeline_state.db*
+*.db
+*.db.bak*
+*.corrupt*
+*.db-wal
+*.db-shm
+
+# Logs
+logs/
+*.log
+*.out
+*.err
+
+# Large models / checkpoints / caches
+models/
+*.bin
+*.pt
+*.ckpt
+*.safetensors
+*.h5
+*.index
+hf_cache/
+huggingface/
+.cache/
+
+# vLLM artifacts
+vllm-*
+.vllm_cache/
+
+# Containers and images
+containers/
+*.sif
+*.img
+
+# Data and large intermediate files
+data/
+*.csv
+*.tsv
+*.jsonl
+*.parquet
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing/IDE
+.pytest_cache/
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets and env
+.env
+*.pem
+*.key
+*.crt
+secrets/
+keys/
+
+# Misc
+*.tar.gz
+*.zip
+*.tar
+
+# Keep a short README and small config files tracked
+!README.md
+!contradictions_pipeline_implementation_plan.md
