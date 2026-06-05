@@ -12,8 +12,6 @@ env/
 .Python
 
 # SQLite databases and journals
-pipeline_state.db
-pipeline_state.db*
 *.db
 *.db.bak*
 *.corrupt*
