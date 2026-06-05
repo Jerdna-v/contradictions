@@ -1,0 +1,115 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+\title{Contradictions Pipeline Implementation Report}
+\author{Andrej Natev}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report summarizes the implementation of the contradictions pipeline in the \texttt{contradictions/} project. The system detects potentially contradictory scientific claims in computer science literature using a staged workflow with checkpointing at every step. The final implementation uses the Computer Science Ontology (CSO) for topic filtering, limits processing to 100{,}000 papers, persists intermediate state in SQLite, and runs claim extraction with a self-hosted vLLM server instead of a mock model server. The report focuses on what was built, how the pipeline is organized, and which reliability issues were addressed during development.
+\end{abstract}
+
+\section{Project Goal}
+The goal of the project is to build a reproducible pipeline that discovers candidate contradiction pairs in scientific literature and stores every intermediate result so execution can be resumed safely. The design favors modular stages over a single end-to-end model so that each component can be inspected, tested, and replaced independently.
+
+The current implementation was developed in the \texttt{contradictions/} directory and is intended to be self-contained. The workflow uses the CSO classifier, a semantic similarity stage, multi-claim extraction, evidence retrieval, contradiction detection, and typing. Every stage writes to a checkpoint database named \texttt{pipeline\_state.db}.
+
+The project repository is available at \href{https://github.com/Jerdna-v/contradictions}{https://github.com/Jerdna-v/contradictions}.
+
+\section{Implemented Scope}
+The following decisions were incorporated into the project implementation:
+\begin{itemize}[noitemsep]
+    \item The corpus is limited to 100{,}000 papers rather than 200{,}000.
+    \item The CSO classifier is the primary topic filter used before semantic pairing.
+    \item Every pipeline stage is checkpointed in SQLite so the run can resume after interruption.
+    \item Stage 4 uses a self-hosted vLLM server for claim extraction.
+    \item Claim extraction is configured to return multiple claims per paper, not only one summary claim.
+\end{itemize}
+
+These choices were made to keep the pipeline tractable on shared HPC resources while preserving enough recall for contradiction mining.
+
+\section{Pipeline Overview}
+The pipeline is organized as a sequence of stages, each with a clear responsibility and persistent output.
+
+\begin{table}[ht]
+\centering
+\caption{Pipeline stages implemented in \texttt{contradictions/}.}
+\begin{tabular}{@{}clp{0.65\textwidth}@{}}
+\toprule
+\textbf{Stage} & \textbf{Name} & \textbf{Purpose} \\
+\midrule
+1 & Paper selection & Load the paper subset and apply corpus-level limits. \\
+2 & CSO filtering & Assign CSO concepts and keep the topic-aligned subset. \\
+3 & Similarity pairing & Use dense embeddings to form candidate paper pairs. \\
+4 & Claim extraction & Extract multiple claims from the anchor paper using vLLM. \\
+5 & Evidence retrieval & Retrieve supporting or conflicting evidence from the challenger paper. \\
+6 & NLI classification & Label the pair as contradiction, entailment, or neutral. \\
+7 & Typing and reporting & Store the contradiction type and final structured output. \\
+\bottomrule
+\end{tabular}
+\label{tab:stages}
+\end{table}
+
+The implementation is intentionally incremental. Each stage consumes only the outputs of the previous stage and writes its own result set to the database, which reduces the risk of losing progress on long jobs.
+
+\section{Data Selection and Topic Filtering}
+The pipeline starts from a large arXiv-derived collection and narrows it to the computer science subset. The project uses the CSO classifier to assign topic labels to each paper based on its title and abstract. Only papers matching the desired CSO concepts are retained for downstream processing.
+
+This stage is important because contradiction mining over the full corpus would be too noisy and computationally expensive. Topic filtering ensures that later stages compare papers that are at least semantically related. A lexical filter was also introduced to keep the selected concepts precise and to avoid clusters that are too broad.
+
+\section{Candidate Pair Generation}
+After topic filtering, the pipeline computes semantic similarity between papers using dense embeddings. Candidate pairs are formed only when two papers are close enough in embedding space to plausibly discuss the same problem. This reduces the search space from a quadratic all-pairs comparison to a much smaller list of relevant candidates.
+
+The candidate pair stage is implemented as a checkpointed transformation: once candidate pairs are stored, later stages can reuse them without recomputation.
+
+\section{Stage 4: Claim Extraction with vLLM}
+Stage 4 was one of the most important implementation changes in the project. It originally used a mock server for development, but the final setup replaces that mock service with a self-hosted vLLM endpoint. This lets the pipeline run against a real model server inside the HPC environment.
+
+The claim extraction prompt was updated so the model returns multiple claims for a paper instead of a single compressed statement. That change improves recall because scientific papers usually contain several distinct claims across the introduction, methods, and conclusion. The extraction step now produces structured JSON output that can be parsed and stored directly.
+
+\section{Checkpointing and Reliability}
+The pipeline uses SQLite as its checkpoint layer. The database stores the progress of each pair and the artifacts produced by each stage. This is useful for long-running jobs because the pipeline can be resumed after failure instead of starting over.
+
+During development, the database path \texttt{pipeline\_state.db} became a central part of the workflow. The recovery process also showed that SQLite is sensitive to concurrent writers on a shared filesystem, so the current workflow is safest when only one stage 4 writer is active at a time. A verified backup database was used to restore a clean state after corruption, and the pipeline was relaunched from that clean snapshot.
+
+The practical lesson is that checkpointing is only helpful if the storage layer remains stable. For this project, single-writer execution is the safest mode for the SQLite-backed stages.
+
+\section{What Was Done in the Repository}
+The \texttt{contradictions/} project now contains the main implementation artifacts required for the report:
+\begin{itemize}[noitemsep]
+    \item a pipeline script that coordinates stages 1 through 7,
+    \item a database schema with stage checkpoints,
+    \item prompt templates for claim extraction, evidence retrieval, and NLI,
+    \item a self-hosted vLLM setup for stage 4,
+    \item an updated \texttt{.gitignore} to keep large or generated files out of Git,
+    \item a local Git repository initialized on the \texttt{main} branch.
+\end{itemize}
+
+The repository was also prepared for version control by creating an initial commit that includes the implementation files rather than the generated database or log artifacts.
+
+\section{Current Status}
+At the time of writing, the pipeline is in a state where the implementation is ready for repeated execution on the restored checkpoint database. The main open operational concern is keeping the SQLite checkpoint file healthy under HPC workloads. Functionally, the code path for CSO filtering, similarity pairing, multi-claim extraction, and downstream labeling is in place.
+
+\section{Lessons Learned}
+Several practical lessons emerged during the work:
+\begin{itemize}[noitemsep]
+    \item Real model serving is preferable to mock servers once the prompt and parsing logic are stable.
+    \item Multi-claim extraction is necessary for scientific papers because they rarely express only one claim.
+    \item SQLite checkpointing is convenient, but concurrent writes can corrupt the database on shared storage.
+    \item Limiting the corpus to 100{,}000 papers makes the project much more manageable without changing the overall pipeline design.
+\end{itemize}
+
+\section{Conclusion}
+The contradictions project now has a coherent staged implementation that combines CSO-based topic restriction, dense similarity filtering, multi-claim extraction, NLI-based labeling, and SQLite checkpoints. The design is practical for HPC execution and reflects the constraints that arose during development. The final report captures the actual implementation rather than only the intended architecture, which makes it more useful as a project summary and handoff document.
+
+\end{document}

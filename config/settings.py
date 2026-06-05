@@ -5,6 +5,7 @@ import os
 RETRIEVAL_VECTORS_PATH = os.getenv("RETRIEVAL_VECTORS_PATH", "")
 METADATA_PATH = os.getenv("METADATA_PATH", "")
 CHUNKS_METADATA_PATH = os.getenv("CHUNKS_METADATA_PATH", "")
+RAW_PAPERS_PATH = os.getenv("RAW_PAPERS_PATH", "")
 SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "pipeline_state.db")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 LOG_PATH = os.getenv("LOG_PATH", "logs/pipeline.log")

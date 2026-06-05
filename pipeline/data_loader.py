@@ -1,14 +1,16 @@
 import csv
 import json
 import os
-from typing import Dict, List, Tuple
+import re
+from typing import Dict, List, Set, Tuple
 
 import numpy as np
 import pandas as pd
 
-from pipeline.text_utils import extract_sections
+from pipeline.text_utils import extract_sections, extract_sections_from_markdown
 
 _EMBEDDING_CACHE = None
+_VALID_PAPER_ID_RE = re.compile(r"^\d+\.\d+$")
 
 
 def _paper_limit() -> int:
@@ -22,6 +24,12 @@ def _paper_limit() -> int:
 
 def _is_paper(record: Dict[str, object]) -> bool:
     return str(record.get("source_type") or "").strip().lower() == "paper"
+
+
+def _is_valid_paper_id(paper_id: object) -> bool:
+    if paper_id is None:
+        return False
+    return bool(_VALID_PAPER_ID_RE.match(str(paper_id).strip()))
 
 
 def _load_json(path: str) -> List[Dict[str, object]]:
@@ -156,7 +164,7 @@ def load_embeddings_map(metadata_path: str, vectors_path: str) -> Dict[str, np.n
         if (record.get("source_type") or "paper") != "paper":
             continue
         paper_id = record.get("paper_id")
-        if not paper_id:
+        if not paper_id or not _is_valid_paper_id(paper_id):
             continue
         mapping[paper_id] = np.asarray(vector, dtype=np.float32)
 
@@ -182,13 +190,60 @@ def load_ul_fri_processed_metadata(index_meta_path: str, chunks_path: str) -> Li
     return papers_only[:_paper_limit()]
 
 
+def load_raw_sections_map(raw_path: str, paper_ids: Set[str]) -> Dict[str, str]:
+    if not raw_path or not os.path.isfile(raw_path) or not paper_ids:
+        return {}
+
+    try:
+        import pyarrow.parquet as pq
+    except Exception:
+        pq = None
+
+    if pq is None:
+        df = pd.read_parquet(raw_path, columns=["id", "sections_text"])
+        if "id" not in df.columns or "sections_text" not in df.columns:
+            raise ValueError("Raw papers parquet must include 'id' and 'sections_text' columns")
+
+        filtered = df[df["id"].isin(paper_ids)]
+        return {
+            str(row["id"]): row.get("sections_text") or ""
+            for row in filtered.to_dict(orient="records")
+        }
+
+    parquet = pq.ParquetFile(raw_path)
+    output: Dict[str, str] = {}
+    for group_index in range(parquet.num_row_groups):
+        table = parquet.read_row_group(group_index, columns=["id", "sections_text"])
+        rows = table.to_pydict()
+        ids = rows.get("id", [])
+        texts = rows.get("sections_text", [])
+        for paper_id, text in zip(ids, texts):
+            key = str(paper_id)
+            if key in paper_ids:
+                output[key] = text or ""
+    return output
+
+
 def load_papers_with_metadata(metadata_path: str) -> List[Dict[str, object]]:
     chunks_path = os.getenv("CHUNKS_METADATA_PATH", "")
     if metadata_path.endswith("retrieval_index_meta.parquet") and chunks_path:
-        return load_ul_fri_processed_metadata(metadata_path, chunks_path)
-
-    records = load_metadata(metadata_path)
-    normalized = [normalize_record(r) for r in records]
+        normalized = load_ul_fri_processed_metadata(metadata_path, chunks_path)
+    else:
+        records = load_metadata(metadata_path)
+        normalized = [normalize_record(r) for r in records]
     # Return only papers; embeddings mapping will align rows and skip non-papers
-    papers_only = [r for r in normalized if _is_paper(r)]
+    papers_only = [
+        r for r in normalized if _is_paper(r) and _is_valid_paper_id(r.get("paper_id"))
+    ]
+
+    raw_path = os.getenv("RAW_PAPERS_PATH", "").strip()
+    raw_map = load_raw_sections_map(raw_path, {r.get("paper_id") for r in papers_only})
+    if raw_map:
+        for paper in papers_only:
+            raw_text = raw_map.get(paper.get("paper_id") or "")
+            if not raw_text:
+                continue
+            sections = extract_sections_from_markdown(raw_text)
+            paper.update(sections)
+
     return papers_only[:_paper_limit()]

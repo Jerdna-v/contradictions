@@ -6,6 +6,7 @@ from typing import Dict, List
 _CITE_RE = re.compile(r"\{\{cite:[a-f0-9]{40}\}\}")
 _FIG_RE = re.compile(r"\b(fig\.|figure|table)\s*\d+\b", re.IGNORECASE)
 _WS_RE = re.compile(r"\s+")
+_HEADING_RE = re.compile(r"^\s*#+\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
 
 
 def clean_text(text: str) -> str:
@@ -25,6 +26,66 @@ def extract_sections(body_text: List[Dict[str, str]]) -> Dict[str, str]:
     for item in body_text or []:
         heading = (item.get("heading") or "").lower()
         text = item.get("text") or ""
+        if not text:
+            continue
+
+        if "introduction" in heading:
+            intro_parts.append(text[:500])
+        if any(key in heading for key in ["result", "experiment", "evaluation"]):
+            results_parts.append(text)
+        if any(key in heading for key in ["conclusion", "summary"]):
+            conclusion_parts.append(text)
+        if "limitation" in heading:
+            limitations_parts.append(text)
+        if any(key in heading for key in ["future", "discussion"]):
+            future_parts.append(text)
+
+    return {
+        "intro_text": clean_text(" ".join(intro_parts)),
+        "results_text": clean_text(" ".join(results_parts)),
+        "conclusion_text": clean_text(" ".join(conclusion_parts)),
+        "limitations_text": clean_text(" ".join(limitations_parts)),
+        "future_work_text": clean_text(" ".join(future_parts)),
+    }
+
+
+def _normalize_heading(text: str) -> str:
+    text = text.strip().lower()
+    text = re.sub(r"^\d+(?:\.\d+)*\s*", "", text)
+    return text
+
+
+def extract_sections_from_markdown(section_text: str) -> Dict[str, str]:
+    intro_parts = []
+    results_parts = []
+    conclusion_parts = []
+    limitations_parts = []
+    future_parts = []
+
+    if not section_text:
+        return {
+            "intro_text": "",
+            "results_text": "",
+            "conclusion_text": "",
+            "limitations_text": "",
+            "future_work_text": "",
+        }
+
+    matches = list(_HEADING_RE.finditer(section_text))
+    if not matches:
+        return {
+            "intro_text": "",
+            "results_text": "",
+            "conclusion_text": "",
+            "limitations_text": "",
+            "future_work_text": "",
+        }
+
+    for idx, match in enumerate(matches):
+        heading = _normalize_heading(match.group(1))
+        start = match.end()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(section_text)
+        text = section_text[start:end].strip()
         if not text:
             continue
 

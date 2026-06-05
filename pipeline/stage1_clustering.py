@@ -35,6 +35,22 @@ def _build_cso_classifier():
     )
 
 
+def _load_leaf_topics():
+    try:
+        from cso_classifier.ontology import Ontology
+    except ImportError:
+        LOGGER.warning("cso-classifier ontology unavailable; leaf filtering disabled.")
+        return None
+
+    ontology = Ontology()
+    leaf_topics = set()
+    for topic in ontology.topics.keys():
+        narrowers = ontology.narrowers.get(topic)
+        if not narrowers:
+            leaf_topics.add(topic)
+    return leaf_topics
+
+
 def _classify_cso(classifier, tags_text: Dict[str, str]) -> List[str]:
     if classifier is None:
         return []
@@ -111,6 +127,7 @@ def run_stage1(db_path: str, metadata_path: str) -> None:
         return
 
     classifier = _build_cso_classifier()
+    leaf_topics = _load_leaf_topics()
 
     lexical_enabled = lexical_filter_enabled()
     lexical_entries: List[Dict[str, object]] = []
@@ -154,7 +171,16 @@ def run_stage1(db_path: str, metadata_path: str) -> None:
         )
         paper["cso_tags"] = cso_tags
 
-        for tag in cso_tags:
+        leaf_tags = cso_tags
+        if leaf_topics is not None:
+            leaf_tags = [tag for tag in cso_tags if tag in leaf_topics]
+        paper["leaf_cso_tags"] = leaf_tags
+        paper["leaf_cso_count"] = len(leaf_tags)
+
+        if not leaf_tags:
+            continue
+
+        for tag in leaf_tags:
             cluster_map.setdefault(tag, []).append(paper.get("paper_id"))
             membership_batch.append((tag, paper.get("paper_id")))
 

@@ -60,6 +60,8 @@ def init_db(db_path: str) -> None:
             pub_date         DATE,
             authors          TEXT,
             cso_tags         TEXT,
+            leaf_cso_tags    TEXT,
+            leaf_cso_count   INTEGER,
             embedding        BLOB
         );
 
@@ -124,7 +126,19 @@ def init_db(db_path: str) -> None:
     )
 
     conn.commit()
+    _ensure_papers_columns(conn)
     conn.close()
+
+
+def _ensure_papers_columns(conn: sqlite3.Connection) -> None:
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(papers)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if "leaf_cso_tags" not in existing:
+        cursor.execute("ALTER TABLE papers ADD COLUMN leaf_cso_tags TEXT")
+    if "leaf_cso_count" not in existing:
+        cursor.execute("ALTER TABLE papers ADD COLUMN leaf_cso_count INTEGER")
+    conn.commit()
 
 
 def get_cluster_status(db_path: str, cluster_id: str) -> Optional[str]:
@@ -172,8 +186,9 @@ def upsert_paper(db_path: str, paper: Dict[str, object]) -> None:
         """
         INSERT OR REPLACE INTO papers (
             paper_id, title, abstract, intro_text, results_text, conclusion_text,
-            limitations_text, future_work_text, pub_date, authors, cso_tags, embedding
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT embedding FROM papers WHERE paper_id = ?), NULL))
+            limitations_text, future_work_text, pub_date, authors, cso_tags,
+            leaf_cso_tags, leaf_cso_count, embedding
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT embedding FROM papers WHERE paper_id = ?), NULL))
         """,
         (
             paper.get("paper_id"),
@@ -187,6 +202,8 @@ def upsert_paper(db_path: str, paper: Dict[str, object]) -> None:
             paper.get("pub_date"),
             json.dumps(paper.get("authors") or []),
             json.dumps(paper.get("cso_tags") or []),
+            json.dumps(paper.get("leaf_cso_tags") or []),
+            paper.get("leaf_cso_count") or 0,
             paper.get("paper_id"),
         ),
     )
@@ -204,8 +221,9 @@ def bulk_upsert_papers(db_path: str, papers: List[Dict[str, object]]) -> None:
         """
         INSERT OR REPLACE INTO papers (
             paper_id, title, abstract, intro_text, results_text, conclusion_text,
-            limitations_text, future_work_text, pub_date, authors, cso_tags, embedding
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT embedding FROM papers WHERE paper_id = ?), NULL))
+            limitations_text, future_work_text, pub_date, authors, cso_tags,
+            leaf_cso_tags, leaf_cso_count, embedding
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT embedding FROM papers WHERE paper_id = ?), NULL))
         """,
         [
             (
@@ -220,9 +238,41 @@ def bulk_upsert_papers(db_path: str, papers: List[Dict[str, object]]) -> None:
                 paper.get("pub_date"),
                 json.dumps(paper.get("authors") or []),
                 json.dumps(paper.get("cso_tags") or []),
+                json.dumps(paper.get("leaf_cso_tags") or []),
+                paper.get("leaf_cso_count") or 0,
                 paper.get("paper_id"),
             )
             for paper in papers
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+
+def fetch_paper_cso_tags(db_path: str) -> List[Dict[str, object]]:
+    conn = _connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT paper_id, cso_tags FROM papers")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def bulk_update_leaf_cso(db_path: str, rows: List[Dict[str, object]]) -> None:
+    if not rows:
+        return
+
+    conn = _connect(db_path)
+    cursor = conn.cursor()
+    cursor.executemany(
+        "UPDATE papers SET leaf_cso_tags = ?, leaf_cso_count = ? WHERE paper_id = ?",
+        [
+            (
+                json.dumps(row.get("leaf_cso_tags") or []),
+                row.get("leaf_cso_count") or 0,
+                row.get("paper_id"),
+            )
+            for row in rows
         ],
     )
     conn.commit()

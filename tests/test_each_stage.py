@@ -7,7 +7,12 @@ from pipeline.stage3_similarity import cosine_matrix
 from pipeline.stage4_claims import _parse_claims
 from pipeline.stage5_evidence import extract_evidence
 from pipeline.stage6_nli import ensemble_label
-from pipeline.text_utils import clean_text, extract_sections, matches_lexical_dict
+from pipeline.text_utils import (
+    clean_text,
+    extract_sections,
+    extract_sections_from_markdown,
+    matches_lexical_dict,
+)
 
 
 def test_extract_sections():
@@ -24,6 +29,27 @@ def test_extract_sections():
     assert "Conclusion here" in sections["conclusion_text"]
     assert "Limitations here" in sections["limitations_text"]
     assert "Future work here" in sections["future_work_text"]
+
+
+def test_extract_sections_from_markdown():
+    text = """
+##INTRODUCTION
+Intro text here.
+# Results
+Results are listed here.
+### CONCLUSION
+Conclusion section text.
+## Limitations
+Limitations section text.
+#### Future Work
+Future work section text.
+"""
+    sections = extract_sections_from_markdown(text)
+    assert "Intro text" in sections["intro_text"]
+    assert "Results are" in sections["results_text"]
+    assert "Conclusion section" in sections["conclusion_text"]
+    assert "Limitations section" in sections["limitations_text"]
+    assert "Future work section" in sections["future_work_text"]
 
 
 def test_clean_text():

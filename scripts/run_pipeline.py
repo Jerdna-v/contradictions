@@ -86,6 +86,7 @@ def main() -> None:
         logger.info("Running stage 1")
         run_stage1(SQLITE_DB_PATH, METADATA_PATH)
 
+
     cluster_ids = [args.cluster_id] if args.cluster_id else get_pending_clusters(SQLITE_DB_PATH)
 
     use_celery = os.getenv("USE_CELERY", "true").lower() == "true"
